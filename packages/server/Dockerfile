@@ -57,6 +57,9 @@ COPY packages/runtime-form/ packages/runtime-form/
 COPY packages/shared/ packages/shared/
 COPY packages/trace-client/ packages/trace-client/
 COPY packages/server/ packages/server/
+# Self-hosted RisingWave bootstrap uses the release-bound relation manifest and SQL artifacts.
+COPY scripts/dev/raftdev-risingwave-bootstrap.ts scripts/dev/raftdev-risingwave-bootstrap.ts
+COPY infra/risingwave/sql/ infra/risingwave/sql/
 COPY manual/ manual/
 
 LABEL org.opencontainers.image.title="slock-server" \

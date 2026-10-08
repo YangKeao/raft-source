@@ -1,0 +1,107 @@
+name: Build self-host images
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - self-host-v1.21.2
+    paths:
+      - .github/workflows/build-selfhost-images.yml
+      - package.json
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - packages/**
+      - scripts/dev/raftdev-risingwave-bootstrap.ts
+      - infra/risingwave/sql/**
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: selfhost-images-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SERVER_IMAGE: ghcr.io/yangkeao/raft-server
+  WEB_IMAGE: ghcr.io/yangkeao/raft-web
+  RELEASE_NAME: v1.21.2-source.1-selfhost
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out snapshot
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Record build identity
+        id: identity
+        shell: bash
+        run: echo "built_at=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push server
+        id: server
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: packages/server/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.SERVER_IMAGE }}:${{ github.sha }}
+            ${{ env.SERVER_IMAGE }}:${{ env.RELEASE_NAME }}
+          build-args: |
+            RAFT_RELEASE_SHA=${{ github.sha }}
+            RAFT_BUILD_AT=${{ steps.identity.outputs.built_at }}
+            RAFT_RELEASE_BRANCH=${{ env.RELEASE_NAME }}
+            RAFT_IMAGE_SOURCE=${{ github.event.repository.html_url }}
+            SLOCK_RELEASE_SHA=${{ github.sha }}
+            SLOCK_BUILD_AT=${{ steps.identity.outputs.built_at }}
+            SLOCK_RELEASE_BRANCH=${{ env.RELEASE_NAME }}
+          cache-from: type=gha,scope=raft-server
+          cache-to: type=gha,mode=max,scope=raft-server
+          provenance: mode=max
+          sbom: true
+
+      - name: Build and push web
+        id: web
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: packages/web/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.WEB_IMAGE }}:${{ github.sha }}
+            ${{ env.WEB_IMAGE }}:${{ env.RELEASE_NAME }}
+          build-args: |
+            VITE_API_URL=https://raft.keao.space
+            VITE_DEPLOYMENT_ENV=production
+            VITE_COMMIT_SHA=${{ github.sha }}
+            VITE_BUILD_AT=${{ steps.identity.outputs.built_at }}
+            VITE_RELEASE_BRANCH=${{ env.RELEASE_NAME }}
+            VITE_FRONTEND_RELEASE_ID=${{ github.sha }}
+          cache-from: type=gha,scope=raft-web
+          cache-to: type=gha,mode=max,scope=raft-web
+          provenance: mode=max
+          sbom: true
+
+      - name: Publish digests
+        shell: bash
+        run: |
+          {
+            echo '## Self-host image digests'
+            echo
+            echo '- `${{ env.SERVER_IMAGE }}@${{ steps.server.outputs.digest }}`'
+            echo '- `${{ env.WEB_IMAGE }}@${{ steps.web.outputs.digest }}`'
+          } >> "$GITHUB_STEP_SUMMARY"
