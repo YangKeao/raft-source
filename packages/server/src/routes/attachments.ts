@@ -524,7 +524,13 @@ function shouldUseDownloadDisposition(req: Request): boolean {
 export function shouldStreamAttachmentThroughServerForRequest(
   req: Pick<Request, "query">,
 ): boolean {
-  return req.query.selectScreenshot === "1" || process.env.DEPLOYMENT_ENV === "slockdev";
+  return isAttachmentDownloadProxyEnabled()
+    || req.query.selectScreenshot === "1"
+    || process.env.DEPLOYMENT_ENV === "slockdev";
+}
+
+export function isAttachmentDownloadProxyEnabled(): boolean {
+  return process.env.ATTACHMENT_DOWNLOAD_PROXY_ENABLED?.trim().toLowerCase() === "true";
 }
 
 export function getAttachmentStreamingBaseUrl(

@@ -187,6 +187,43 @@ test("agent-api attachment download URL: storage without presign answers 409 dow
   }
 });
 
+test("agent-api attachment download proxy disables presigning and streams through the server", async ({ app }) => {
+  const previous = process.env.ATTACHMENT_DOWNLOAD_PROXY_ENABLED;
+  try {
+    process.env.ATTACHMENT_DOWNLOAD_PROXY_ENABLED = "true";
+    const fx = await seedFixture();
+    const presigns: Array<{ key: string; options: unknown }> = [];
+    let gets = 0;
+    __setStorageForTests({
+      ...presigningStorage(presigns),
+      get: async () => {
+        gets += 1;
+        return Readable.from(Buffer.from("proxy bytes"));
+      },
+    });
+
+    const url = await fetch(`${app.baseUrl}/internal/agent-api/attachments/${fx.visibleId}/url`, {
+      headers: agentHeaders(fx.readKey),
+    });
+    assert.equal(url.status, 409);
+    assert.deepEqual(await url.json(), AGENT_API_ATTACHMENT_DOWNLOAD_URL_UNAVAILABLE_RESPONSE);
+
+    const streamed = await fetch(`${app.baseUrl}/internal/agent-api/attachments/${fx.visibleId}`, {
+      headers: agentHeaders(fx.readKey),
+      redirect: "manual",
+    });
+    assert.equal(streamed.status, 200);
+    assert.equal(await streamed.text(), "proxy bytes");
+    assert.equal(gets, 1);
+    assert.deepEqual(presigns, []);
+  } finally {
+    if (previous === undefined) delete process.env.ATTACHMENT_DOWNLOAD_PROXY_ENABLED;
+    else process.env.ATTACHMENT_DOWNLOAD_PROXY_ENABLED = previous;
+    resetStorageForTests();
+    await app.close();
+  }
+});
+
 test("agent-api attachment download URL: the signed URL never reaches logs or trace attributes", async ({ app }) => {
   const captured: unknown[][] = [];
   const original = { error: console.error, warn: console.warn, log: console.log, info: console.info };

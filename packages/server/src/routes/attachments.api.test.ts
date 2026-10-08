@@ -974,17 +974,25 @@ test("attachment HTML preview preserves upstream storage error logging after hea
 
 test("download-as-image attachment requests force same-origin streaming instead of presigned redirect", () => {
   const previous = process.env.DEPLOYMENT_ENV;
+  const previousProxy = process.env.ATTACHMENT_DOWNLOAD_PROXY_ENABLED;
   try {
     delete process.env.DEPLOYMENT_ENV;
+    delete process.env.ATTACHMENT_DOWNLOAD_PROXY_ENABLED;
     assert.equal(shouldStreamAttachmentThroughServerForRequest({ query: { selectScreenshot: "1" } }), true);
     assert.equal(shouldStreamAttachmentThroughServerForRequest({ query: { selectScreenshot: "0" } }), false);
     assert.equal(shouldStreamAttachmentThroughServerForRequest({ query: {} }), false);
 
+    process.env.ATTACHMENT_DOWNLOAD_PROXY_ENABLED = " true ";
+    assert.equal(shouldStreamAttachmentThroughServerForRequest({ query: {} }), true);
+
+    delete process.env.ATTACHMENT_DOWNLOAD_PROXY_ENABLED;
     process.env.DEPLOYMENT_ENV = "slockdev";
     assert.equal(shouldStreamAttachmentThroughServerForRequest({ query: {} }), true);
   } finally {
     if (previous === undefined) delete process.env.DEPLOYMENT_ENV;
     else process.env.DEPLOYMENT_ENV = previous;
+    if (previousProxy === undefined) delete process.env.ATTACHMENT_DOWNLOAD_PROXY_ENABLED;
+    else process.env.ATTACHMENT_DOWNLOAD_PROXY_ENABLED = previousProxy;
   }
 });
 

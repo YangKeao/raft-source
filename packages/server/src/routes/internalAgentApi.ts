@@ -223,6 +223,7 @@ import {
   generateThumbnail,
   getThumbnailUrl,
   isEmptyUploadedFile,
+  isAttachmentDownloadProxyEnabled,
   isOversizedUploadedFile,
   isSvgAttachmentMimeType,
   normalizeAttachmentFilename,
@@ -4140,6 +4141,7 @@ async function resolveAgentApiAttachmentDownloadTarget(
  * bearer capability: never log or trace it.
  */
 function presignAgentApiAttachmentDownload(target: AgentApiAttachmentDownloadTarget): Promise<string> | null {
+  if (isAttachmentDownloadProxyEnabled()) return null;
   if (!target.storage.getPresignedUrl) return null;
   return target.storage.getPresignedUrl(target.attachment.storageKey, {
     expiresIn: AGENT_API_ATTACHMENT_DOWNLOAD_URL_TTL_SECONDS,
