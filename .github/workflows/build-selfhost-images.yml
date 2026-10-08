@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
+      - main
       - self-host-v1.21.2
     paths:
       - .github/workflows/build-selfhost-images.yml
