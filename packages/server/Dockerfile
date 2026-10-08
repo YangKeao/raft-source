@@ -58,6 +58,9 @@ COPY packages/shared/ packages/shared/
 COPY packages/trace-client/ packages/trace-client/
 COPY packages/server/ packages/server/
 COPY manual/ manual/
+# The self-host RisingWave bootstrap loads these release-bound files at runtime.
+COPY scripts/dev/raftdev-risingwave-bootstrap.ts scripts/dev/raftdev-risingwave-bootstrap.ts
+COPY infra/risingwave/sql/ infra/risingwave/sql/
 # Node/Oxc cannot transpile TypeScript beneath node_modules. Keep workspace
 # sources at their original paths, separate from the production dependency graph.
 RUN mkdir -p /out-app/packages /out-dependencies/packages \
@@ -71,6 +74,9 @@ RUN mkdir -p /out-app/packages /out-dependencies/packages \
        cp -a "packages/$package" "/out-app/packages/$package"; \
      done \
   && cp -a manual /out-app/manual \
+  && mkdir -p /out-app/scripts/dev /out-app/infra/risingwave \
+  && cp -a scripts/dev/raftdev-risingwave-bootstrap.ts /out-app/scripts/dev/ \
+  && cp -a infra/risingwave/sql /out-app/infra/risingwave/ \
   && chmod +x /out-app/packages/server/entrypoint.sh \
   && mkdir -p /out-dependencies/node_modules/@oxc-node \
   && ln -s ../../packages/server/node_modules/@oxc-node/core /out-dependencies/node_modules/@oxc-node/core \
