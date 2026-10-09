@@ -88,11 +88,13 @@ export default function RegisterPage({ onSwitchToLogin, previewProviders }: Regi
     }
 
     try {
+      const inviteToken = window.localStorage.getItem(PENDING_INVITE_STORAGE_KEY) || undefined;
       await register(email, password, {
         acceptTerms: true,
         termsVersion: CURRENT_LEGAL_ACCEPTANCE.termsVersion,
         privacyVersion: CURRENT_LEGAL_ACCEPTANCE.privacyVersion,
-        legalAcceptanceSource: window.localStorage.getItem(PENDING_INVITE_STORAGE_KEY) ? "invite" : "signup",
+        legalAcceptanceSource: inviteToken ? "invite" : "signup",
+        ...(inviteToken ? { inviteToken } : {}),
         // The page signed up from (an Artifact link): the verification email's link lands back on it, as third-party sign-up does.
       }, getCurrentReturnTo());
     } catch (err: any) {

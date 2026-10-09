@@ -7,6 +7,9 @@ import { MemoryStore } from "express-rate-limit";
 import { asMachineId } from "@botiverse/raft-shared";
 import {
   oauthIdentityTokenLimiter,
+  DEFAULT_AUTH_LOGIN_RATE_LIMIT_MAX,
+  DEFAULT_AUTH_REGISTRATION_RATE_LIMIT_MAX,
+  positiveIntegerEnv,
   rateLimitUserMachineOrIpKey,
   rateLimitUserOrIpKey,
   shouldSkipAttachmentRateLimit,
@@ -14,6 +17,14 @@ import {
   shouldSkipProductFeedbackRateLimit,
 } from "./app";
 import { oauthIdentityTokenRateLimitKey } from "./routes/oauth";
+
+test("sensitive auth rate limits are moderate and reject invalid overrides", () => {
+  assert.equal(DEFAULT_AUTH_LOGIN_RATE_LIMIT_MAX, 20);
+  assert.equal(DEFAULT_AUTH_REGISTRATION_RATE_LIMIT_MAX, 10);
+  assert.equal(positiveIntegerEnv("35", 20), 35);
+  assert.equal(positiveIntegerEnv("0", 20), 20);
+  assert.equal(positiveIntegerEnv("not-a-number", 10), 10);
+});
 
 test("rate limit keys preserve authenticated principal identity before IP fallback", () => {
   assert.equal(rateLimitUserOrIpKey({ userId: "user-1", ip: "2001:db8::1" }), "user-1");

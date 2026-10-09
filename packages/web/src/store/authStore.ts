@@ -151,7 +151,7 @@ interface AuthState {
    */
   applySignIn: (body: { user: User; accessToken: string; refreshToken: string }) => void;
   /** `returnTo`: the page signed up from (an Artifact link); the verification email's link lands back on it (#88). */
-  register: (email: string, password: string, legalAcceptance: { acceptTerms: boolean; termsVersion: string; privacyVersion: string; legalAcceptanceSource?: "signup" | "invite" }, returnTo?: string) => Promise<void>;
+  register: (email: string, password: string, legalAcceptance: { acceptTerms: boolean; termsVersion: string; privacyVersion: string; legalAcceptanceSource?: "signup" | "invite"; inviteToken?: string }, returnTo?: string) => Promise<void>;
   completeOnboardingProfile: (
     name: string,
     displayName: string,

@@ -1141,7 +1141,6 @@ export async function findExistingSocialLoginUser(profile: SocialAuthProfile): P
     throw new SocialEmailConflictError(existingEmailUser.id, profile.provider);
   }
 
-  assertRegistrationEnabled();
   return null;
 }
 
@@ -1150,13 +1149,13 @@ export async function createSocialUser(
   legalAcceptance: legalAcceptanceService.LegalAcceptanceInput,
   legalMetadata: legalAcceptanceService.LegalAcceptanceMetadata = {},
   legalSource: Extract<legalAcceptanceService.LegalAcceptanceSource, "oauth" | "invite"> = "oauth",
-  options: { deferProfileSetup?: boolean } = {},
+  options: { deferProfileSetup?: boolean; registrationInviteValidated?: boolean } = {},
 ) {
   const db = getDb();
   assertUsableSocialProfile(profile);
   const normalizedEmail = normalizeEmail(profile.email);
   const accepted = legalAcceptanceService.requireCurrentLegalAcceptance(legalAcceptance);
-  assertRegistrationEnabled();
+  assertRegistrationEnabled({ hasValidInvite: options.registrationInviteValidated });
   const [existingEmailUser] = await db.select({ id: users.id }).from(users).where(eq(users.email, normalizedEmail));
   if (existingEmailUser) {
     throw new Error(`An account with this email already exists. Sign in with email and password first, then connect ${getProviderLabel(profile.provider)} in Settings.`);
@@ -1171,7 +1170,7 @@ export async function createSocialUser(
           throw new Error(`An account with this email already exists. Sign in with email and password first, then connect ${getProviderLabel(profile.provider)} in Settings.`);
         }
 
-        assertRegistrationEnabled();
+        assertRegistrationEnabled({ hasValidInvite: options.registrationInviteValidated });
 
         const providerDisplayName = profile.displayName?.trim() || null;
         const nameSeed = providerDisplayName || normalizedEmail.split("@")[0] || "user";

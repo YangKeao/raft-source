@@ -164,6 +164,9 @@ export default function SocialAuthCallbackPage() {
       const completionBody = {
         ...(pendingLink ? { pendingLinkToken: pendingLink.token } : {}),
         code: callbackParams.code,
+        ...(window.localStorage.getItem(PENDING_INVITE_STORAGE_KEY)
+          ? { inviteToken: window.localStorage.getItem(PENDING_INVITE_STORAGE_KEY)! }
+          : {}),
         ...(includeLegalAcceptance
           ? {
               acceptTerms: true,
