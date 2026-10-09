@@ -419,6 +419,71 @@ export async function getInviteInfo(token: string): Promise<InviteInfo | null> {
   };
 }
 
+/**
+ * Authorize account creation without consuming the invite. Acceptance remains
+ * a separate authenticated step after the new account has completed setup.
+ */
+export async function isInviteValidForRegistration(token: string, email: string): Promise<boolean> {
+  const cleanToken = token.trim();
+  if (!cleanToken) return false;
+
+  const db = getDb();
+  const tokenHash = hashToken(cleanToken);
+  const [emailInvite] = await db
+    .select({
+      invitedEmail: serverInvites.invitedEmail,
+      status: serverInvites.status,
+      expiresAt: serverInvites.expiresAt,
+      serverId: serverInvites.serverId,
+    })
+    .from(serverInvites)
+    .where(eq(serverInvites.tokenHash, tokenHash));
+
+  if (emailInvite) {
+    if (
+      emailInvite.status !== "pending"
+      || isExpired(emailInvite.expiresAt)
+      || normalizeEmail(emailInvite.invitedEmail) !== normalizeEmail(email)
+    ) {
+      return false;
+    }
+    const [server] = await db
+      .select({ deletedAt: servers.deletedAt })
+      .from(servers)
+      .where(eq(servers.id, emailInvite.serverId));
+    if (!server || server.deletedAt) return false;
+    const capacity = await getHumanSeatLimitState(emailInvite.serverId);
+    return !capacity.humanSeatLimitReached;
+  }
+
+  const [joinLink] = await db
+    .select({
+      serverId: serverJoinLinks.serverId,
+      expiresAt: serverJoinLinks.expiresAt,
+      maxUses: serverJoinLinks.maxUses,
+      useCount: serverJoinLinks.useCount,
+      revokedAt: serverJoinLinks.revokedAt,
+    })
+    .from(serverJoinLinks)
+    .where(eq(serverJoinLinks.token, cleanToken));
+
+  if (
+    !joinLink
+    || joinLink.revokedAt
+    || isExpired(joinLink.expiresAt)
+    || isExhausted(joinLink.maxUses, joinLink.useCount)
+  ) {
+    return false;
+  }
+  const [server] = await db
+    .select({ deletedAt: servers.deletedAt })
+    .from(servers)
+    .where(eq(servers.id, joinLink.serverId));
+  if (!server || server.deletedAt) return false;
+  const capacity = await getHumanSeatLimitState(joinLink.serverId);
+  return !capacity.humanSeatLimitReached;
+}
+
 export async function acceptInvite(
   token: string,
   userId: string,

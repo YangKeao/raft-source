@@ -641,7 +641,10 @@ function classifyMobileOAuthProviderFailure(err: unknown): string {
   if (message.includes("email already exists")) {
     return "account_conflict";
   }
-  if (message.includes("Registration is currently disabled")) {
+  if (
+    message.includes("Registration is currently disabled")
+    || message.includes("Registration requires a valid invite")
+  ) {
     return "registration_disabled";
   }
   return "provider_exchange_failed";

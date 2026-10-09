@@ -89,6 +89,33 @@ test("create account submits email, password, and legal acceptance only", async 
   });
 });
 
+test("create account submits the pending invite token for server-side authorization", async () => {
+  vi.spyOn(api, "get").mockImplementation(async () => ({ data: { providers: [] } }));
+  window.localStorage.setItem("slock_pending_invite", "invite-token");
+  const calls: unknown[][] = [];
+  useAuthStore.setState({
+    loading: false,
+    register: async (...args: unknown[]) => {
+      calls.push(args);
+    },
+  } as never);
+  renderPage();
+
+  fireEvent.change(screen.getByLabelText("Email"), { target: { value: "invitee@example.com" } });
+  fireEvent.change(screen.getByLabelText("Password"), { target: { value: "password123" } });
+  fireEvent.click(screen.getByRole("checkbox"));
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+  await waitFor(() => assert.equal(calls.length, 1));
+  assert.deepEqual(calls[0][2], {
+    acceptTerms: true,
+    termsVersion: CURRENT_LEGAL_ACCEPTANCE.termsVersion,
+    privacyVersion: CURRENT_LEGAL_ACCEPTANCE.privacyVersion,
+    legalAcceptanceSource: "invite",
+    inviteToken: "invite-token",
+  });
+});
+
 test("create account exposes configured Google and GitHub entry buttons without explanatory skip copy", async () => {
   vi.spyOn(api, "get").mockImplementation(async () => ({
     data: {

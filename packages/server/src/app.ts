@@ -79,6 +79,14 @@ import { readBuildIdentityStatus } from "./version";
 
 
 export const CORS_PREFLIGHT_MAX_AGE_SECONDS = 7200;
+export const DEFAULT_AUTH_LOGIN_RATE_LIMIT_MAX = 20;
+export const DEFAULT_AUTH_REGISTRATION_RATE_LIMIT_MAX = 10;
+
+export function positiveIntegerEnv(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 export function rateLimitUserOrIpKey(req: Pick<Request, "ip" | "userId">): string {
   return req.userId || ipKeyGenerator(req.ip ?? "unknown");
 }
@@ -287,6 +295,31 @@ export function createApp(options: CreateAppOptions = {}): Express {
     }),
   });
 
+  // Login and account creation are the two anonymous auth operations where a
+  // high shared ceiling is unsafe. Keep the rest of the auth surface on the
+  // generous general limiter so refresh, device authorization, and native-app
+  // polling are not disrupted.
+  const loginLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: positiveIntegerEnv(process.env.AUTH_LOGIN_RATE_LIMIT_MAX, DEFAULT_AUTH_LOGIN_RATE_LIMIT_MAX),
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "Too many login attempts. Please try again in a minute." },
+    skip: () => isTestEnv && (options.testHarness?.skipAuthRateLimit ?? false),
+  });
+
+  const registrationLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: positiveIntegerEnv(
+      process.env.AUTH_REGISTRATION_RATE_LIMIT_MAX,
+      DEFAULT_AUTH_REGISTRATION_RATE_LIMIT_MAX,
+    ),
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "Too many registration attempts. Please try again in a minute." },
+    skip: () => isTestEnv && (options.testHarness?.skipAuthRateLimit ?? false),
+  });
+
   // Separate (more lenient) limiter for join-link invite flow endpoints.
   const inviteFlowLimiter = rateLimit({
     windowMs: 60 * 1000, // 1 minute
@@ -308,6 +341,8 @@ export function createApp(options: CreateAppOptions = {}): Express {
   // Auth routes (rate limited, no auth required)
   // Apply stricter limiter specifically to forgot-password before the general auth limiter
   app.use("/api/auth/forgot-password", forgotPasswordLimiter);
+  app.use("/api/auth/login", loginLimiter);
+  app.use("/api/auth/register", registrationLimiter);
   app.use("/api/auth/invite-info", inviteFlowLimiter);
   app.use("/api/auth/accept-invite", inviteFlowLimiter);
   // task #30 PR-A2 (RFC v0.8 contract v3 §3): shared device-code login

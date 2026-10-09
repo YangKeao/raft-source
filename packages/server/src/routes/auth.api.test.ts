@@ -22,6 +22,8 @@ import {
   sessionRefreshRotationReceipts,
   sessionFamilies,
   sessions,
+  serverInvites,
+  servers,
   userRetirementReceipts,
   userAnalyticsIds,
   userLegalAcceptances,
@@ -32,8 +34,21 @@ import { createSocialAuthCompletion, signSocialAuthState, verifySocialAuthState 
 import { oauthTransactions, userAuthIdentities } from "../db/schema";
 import { signAccessToken } from "../middleware/auth";
 import { MAX_PROFILE_AVATAR_BYTES, PROFILE_AVATAR_TOO_LARGE_MESSAGE } from "../services/avatarService";
+import { createJoinLink } from "../services/inviteService";
+import { createServer } from "../services/serverService";
 
 const test = createApiTest({ humanActivityMuteFlagDefaultEnabled: true, onboardingOpenerFlagDefaultEnabled: false });
+
+async function withRegistrationMode<T>(mode: string, run: () => Promise<T>): Promise<T> {
+  const previous = process.env.REGISTRATION_MODE;
+  process.env.REGISTRATION_MODE = mode;
+  try {
+    return await run();
+  } finally {
+    if (previous === undefined) delete process.env.REGISTRATION_MODE;
+    else process.env.REGISTRATION_MODE = previous;
+  }
+}
 
 const ONE_BY_ONE_GIF = Buffer.from(
   "R0lGODdhAQABAIABAP///wAAACwAAAAAAQABAAACAkQBADs=",
@@ -2143,6 +2158,85 @@ test("POST /api/auth/register records invite source for invite account creation"
   const body = await res.json() as { user: { id: string } };
   const acceptance = await getLegalAcceptanceForUser(body.user.id);
   assert.equal(acceptance?.source, "invite");
+});
+
+test("POST /api/auth/register in invite mode rejects registration without a valid invite", async ({ app }) => {
+  await withRegistrationMode("invite", async () => {
+    const email = `invite-required-${randomUUID()}@slock.test`;
+    const res = await fetch(`${app.baseUrl}/api/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email,
+        password: "password123",
+        acceptTerms: true,
+        termsVersion: CURRENT_LEGAL_ACCEPTANCE.termsVersion,
+        privacyVersion: CURRENT_LEGAL_ACCEPTANCE.privacyVersion,
+      }),
+    });
+    assert.equal(res.status, 403);
+    assert.deepEqual(await res.json(), {
+      code: "registration_invite_required",
+      error: "Registration requires a valid invite",
+    });
+    assert.equal(await findUserByEmail(email), undefined);
+  });
+});
+
+test("POST /api/auth/register in invite mode accepts an active join link", async ({ app }) => {
+  const owner = await seedUser(`invite-owner-${randomUUID()}@slock.test`, `owner-${randomUUID()}`);
+  const server = await createServer("Invite Registration", `invite-registration-${randomUUID()}`, owner.id);
+  await getDb().update(servers).set({ plan: "founder" }).where(eq(servers.id, server.id));
+  const { token: inviteToken } = await createJoinLink(server.id, owner.id);
+
+  await withRegistrationMode("invite", async () => {
+    const res = await fetch(`${app.baseUrl}/api/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: `invite-joiner-${randomUUID()}@slock.test`,
+        password: "password123",
+        inviteToken,
+        acceptTerms: true,
+        termsVersion: CURRENT_LEGAL_ACCEPTANCE.termsVersion,
+        privacyVersion: CURRENT_LEGAL_ACCEPTANCE.privacyVersion,
+        legalAcceptanceSource: "invite",
+      }),
+    });
+    assert.equal(res.status, 200, await res.clone().text());
+  });
+});
+
+test("POST /api/auth/register in invite mode binds email invites to their recipient", async ({ app }) => {
+  const owner = await seedUser(`email-invite-owner-${randomUUID()}@slock.test`, `owner-${randomUUID()}`);
+  const server = await createServer("Email Invite Registration", `email-invite-registration-${randomUUID()}`, owner.id);
+  await getDb().update(servers).set({ plan: "founder" }).where(eq(servers.id, server.id));
+  const inviteToken = `email-invite-${randomUUID()}`;
+  await getDb().insert(serverInvites).values({
+    serverId: server.id,
+    invitedEmail: "intended-recipient@slock.test",
+    invitedByUserId: owner.id,
+    tokenHash: createHash("sha256").update(inviteToken).digest("hex"),
+    expiresAt: new Date(Date.now() + 60_000),
+  });
+
+  await withRegistrationMode("invite", async () => {
+    const res = await fetch(`${app.baseUrl}/api/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: "different-recipient@slock.test",
+        password: "password123",
+        inviteToken,
+        acceptTerms: true,
+        termsVersion: CURRENT_LEGAL_ACCEPTANCE.termsVersion,
+        privacyVersion: CURRENT_LEGAL_ACCEPTANCE.privacyVersion,
+        legalAcceptanceSource: "invite",
+      }),
+    });
+    assert.equal(res.status, 403);
+    assert.equal(await findUserByEmail("different-recipient@slock.test"), undefined);
+  });
 });
 
 test("POST /api/auth/register rejects stale legal versions before creating user", async ({ app }) => {

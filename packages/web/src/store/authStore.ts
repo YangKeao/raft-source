@@ -93,7 +93,7 @@ interface AuthState {
   restoreState: AuthRestoreState;
 
   login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string, legalAcceptance: { acceptTerms: boolean; termsVersion: string; privacyVersion: string; legalAcceptanceSource?: "signup" | "invite" }) => Promise<void>;
+  register: (email: string, password: string, legalAcceptance: { acceptTerms: boolean; termsVersion: string; privacyVersion: string; legalAcceptanceSource?: "signup" | "invite"; inviteToken?: string }) => Promise<void>;
   completeOnboardingProfile: (
     name: string,
     displayName: string,

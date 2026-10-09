@@ -43,7 +43,11 @@ import {
   validateName,
   type TimeFormatPreference,
 } from "@botiverse/raft-shared";
-import { getRegistrationBlockedReason } from "../services/registrationPolicy";
+import {
+  getRegistrationBlockedReason,
+  REGISTRATION_DISABLED_MESSAGE,
+  REGISTRATION_INVITE_REQUIRED_MESSAGE,
+} from "../services/registrationPolicy";
 import {
   createAvatarUpload,
   MAX_PROFILE_AVATAR_BYTES,
@@ -96,6 +100,7 @@ const emailRegisterRequestSchema = z.object({
   email: z.string().min(1),
   password: z.string().min(1),
   name: z.string().min(1).optional(),
+  inviteToken: z.string().min(1).max(512).optional(),
   stagingSelfAccountCapability: z.string().min(32).max(256).optional(),
 }).passthrough();
 
@@ -327,6 +332,25 @@ function parseSocialAccountCreationSource(raw: any): "oauth" | "invite" {
   return raw?.legalAcceptanceSource === "invite" ? "invite" : "oauth";
 }
 
+async function hasValidRegistrationInvite(raw: any, email: string): Promise<boolean> {
+  const token = typeof raw?.inviteToken === "string" ? raw.inviteToken : "";
+  if (!token) return false;
+  return inviteService.isInviteValidForRegistration(token, email);
+}
+
+function registrationErrorResponse(res: Response, err: unknown): boolean {
+  const message = err instanceof Error ? err.message : "";
+  if (message === REGISTRATION_INVITE_REQUIRED_MESSAGE) {
+    res.status(403).json({ code: "registration_invite_required", error: message });
+    return true;
+  }
+  if (message === REGISTRATION_DISABLED_MESSAGE) {
+    res.status(403).json({ code: "registration_disabled", error: "New account registration is currently unavailable" });
+    return true;
+  }
+  return false;
+}
+
 function getAgreementRequestMetadata(req: { ip?: string; get: (name: string) => string | undefined }) {
   return {
     ipAddress: req.ip ?? null,
@@ -474,10 +498,7 @@ function nativeAppleOAuthErrorResponse(res: Response, err: unknown): boolean {
     res.status(409).json({ code: "account_conflict", error: message });
     return true;
   }
-  if (message.includes("Registration is currently disabled")) {
-    res.status(403).json({ code: "registration_disabled", error: "New account registration is currently unavailable" });
-    return true;
-  }
+  if (registrationErrorResponse(res, err)) return true;
   if (
     message.startsWith("native_apple_") ||
     message.includes("jwt") ||
@@ -539,12 +560,13 @@ async function completeMobileOAuthResponse(req: Request, res: Response, params: 
   if (!user) {
     legalAcceptanceService.requireCurrentLegalAcceptance(parseLegalAcceptance(req.body));
     const profile = socialProfileFromCompletion(getSocialAuthProvider(completion.provider)!, completion);
+    const registrationInviteValidated = await hasValidRegistrationInvite(req.body, profile.email);
     user = await userService.createSocialUser(
       profile,
       parseLegalAcceptance(req.body),
       legalAcceptanceService.getRequestLegalMetadata(req),
       parseSocialAccountCreationSource(req.body),
-      { deferProfileSetup: true },
+      { deferProfileSetup: true, registrationInviteValidated },
     );
   }
 
@@ -565,17 +587,25 @@ async function completeMobileOAuthResponse(req: Request, res: Response, params: 
 
 // Register
 authRouter.post("/register", async (req, res) => {
-  const registrationBlockedReason = getRegistrationBlockedReason();
-  if (registrationBlockedReason) {
-    res.status(403).json({ error: registrationBlockedReason });
-    return;
-  }
   const body = parseEmailRegisterRequest(req.body, res);
   if (!body) return;
   req.body = body;
 
   try {
-    const { email, password, name, stagingSelfAccountCapability } = body;
+    const { email, password, name, inviteToken, stagingSelfAccountCapability } = body;
+    const hasValidInvite = inviteToken
+      ? await inviteService.isInviteValidForRegistration(inviteToken, email)
+      : false;
+    const registrationBlockedReason = getRegistrationBlockedReason({ hasValidInvite });
+    if (registrationBlockedReason) {
+      res.status(403).json({
+        code: registrationBlockedReason === REGISTRATION_INVITE_REQUIRED_MESSAGE
+          ? "registration_invite_required"
+          : "registration_disabled",
+        error: registrationBlockedReason,
+      });
+      return;
+    }
     if (stagingSelfAccountCapability && (process.env.SLOCK_RELEASE_BRANCH !== "staging" || !/@mail\.build$/i.test(email))) {
       res.status(403).json({ error: "Staging self-account registration is unavailable" });
       return;
@@ -625,6 +655,7 @@ authRouter.post("/register", async (req, res) => {
       res.status(legalResponse.status).json(legalResponse.body);
       return;
     }
+    if (registrationErrorResponse(res, err)) return;
     const msg = err?.message || "";
     if (msg === "Username is already taken") {
       res.status(409).json({ code: "AUTH_USERNAME_TAKEN", error: msg });
@@ -1092,12 +1123,13 @@ authRouter.post("/:provider/complete", async (req, res, next) => {
 
     if (!completion.userId) {
       const profile = socialProfileFromCompletion(provider, completion);
+      const registrationInviteValidated = await hasValidRegistrationInvite(req.body, profile.email);
       const user = await userService.createSocialUser(
         profile,
         parseLegalAcceptance(req.body),
         legalAcceptanceService.getRequestLegalMetadata(req),
         parseSocialAccountCreationSource(req.body),
-        { deferProfileSetup: true },
+        { deferProfileSetup: true, registrationInviteValidated },
       );
       const { sessionId, familyId, refreshToken } = await sessionService.createSession(user.id);
       const accessToken = signAccessToken(user.id, familyId);
@@ -1130,6 +1162,7 @@ authRouter.post("/:provider/complete", async (req, res, next) => {
       res.status(legalResponse.status).json(legalResponse.body);
       return;
     }
+    if (registrationErrorResponse(res, err)) return;
     const message = err?.message || "";
     if (message.includes("Invalid") || message.includes("expired") || message.includes("mismatch")) {
       res.status(400).json({ error: message });
