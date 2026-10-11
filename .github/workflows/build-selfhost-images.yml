@@ -86,7 +86,7 @@ jobs:
             ${{ env.WEB_IMAGE }}:${{ github.sha }}
             ${{ env.WEB_IMAGE }}:${{ env.RELEASE_NAME }}
           build-args: |
-            VITE_API_URL=https://raft.keao.space
+            VITE_API_URL=https://raft.keao.dev
             VITE_DEPLOYMENT_ENV=production
             VITE_COMMIT_SHA=${{ github.sha }}
             VITE_BUILD_AT=${{ steps.identity.outputs.built_at }}
