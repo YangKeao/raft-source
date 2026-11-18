@@ -5,7 +5,6 @@ on:
   push:
     branches:
       - main
-      - self-host-v1.21.2
     paths:
       - .github/workflows/build-selfhost-images.yml
       - package.json
@@ -26,7 +25,7 @@ concurrency:
 env:
   SERVER_IMAGE: ghcr.io/yangkeao/raft-server
   WEB_IMAGE: ghcr.io/yangkeao/raft-web
-  RELEASE_NAME: v1.21.2-source.1-selfhost
+  RELEASE_NAME: v1.24.0-source.1-selfhost
 
 jobs:
   build:

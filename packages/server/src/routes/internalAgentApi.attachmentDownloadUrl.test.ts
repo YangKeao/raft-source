@@ -207,7 +207,10 @@ test("agent-api attachment download proxy disables presigning and streams throug
       headers: agentHeaders(fx.readKey),
     });
     assert.equal(url.status, 409);
-    assert.deepEqual(await url.json(), AGENT_API_ATTACHMENT_DOWNLOAD_URL_UNAVAILABLE_RESPONSE);
+    assert.deepEqual(await url.json(), {
+      ...AGENT_API_ATTACHMENT_DOWNLOAD_URL_UNAVAILABLE_RESPONSE,
+      errorCode: AGENT_API_ATTACHMENT_DOWNLOAD_URL_UNAVAILABLE_RESPONSE.code,
+    });
 
     const streamed = await fetch(`${app.baseUrl}/internal/agent-api/attachments/${fx.visibleId}`, {
       headers: agentHeaders(fx.readKey),
