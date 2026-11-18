@@ -636,6 +636,7 @@ export function createApp(options: CreateAppOptions = {}): Express {
   // generous general limiter so refresh, device authorization, and native-app
   // polling are not disrupted.
   const loginLimiter = rateLimit({
+    keyGenerator: (req) => ipKeyGenerator(clientIpForRateLimit(req)),
     windowMs: 60 * 1000,
     max: positiveIntegerEnv(process.env.AUTH_LOGIN_RATE_LIMIT_MAX, DEFAULT_AUTH_LOGIN_RATE_LIMIT_MAX),
     standardHeaders: true,
@@ -645,6 +646,7 @@ export function createApp(options: CreateAppOptions = {}): Express {
   });
 
   const registrationLimiter = rateLimit({
+    keyGenerator: (req) => ipKeyGenerator(clientIpForRateLimit(req)),
     windowMs: 60 * 1000,
     max: positiveIntegerEnv(
       process.env.AUTH_REGISTRATION_RATE_LIMIT_MAX,
